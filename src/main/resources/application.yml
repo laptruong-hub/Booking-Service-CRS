@@ -6,7 +6,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/booking_service_db
     username: postgres
-    password: 123456
+    password: 16042005
     driver-class-name: org.postgresql.Driver
 
   # JPA/Hibernate Configuration
@@ -70,3 +70,17 @@ feign:
         connect-timeout: 5000
         read-timeout: 10000
         logger-level: BASIC
+      # Thêm cấu hình timeout riêng cho Gemini Client ngay dưới default
+      gemini-client: 
+        connect-timeout: 5000
+        read-timeout: 30000
+
+ai:
+  gemini:
+    enabled: true
+    base-url: https://generativelanguage.googleapis.com
+    model: gemini-flash-latest
+    # api-key: ${GEMINI_API_KEY} 
+    api-key: AIzaSyDG6_3lJQoIT1pcIGWAp2PG7JkqnTrI0mg
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000

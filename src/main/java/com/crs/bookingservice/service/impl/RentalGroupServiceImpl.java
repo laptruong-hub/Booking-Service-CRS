@@ -27,6 +27,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.crs.bookingservice.dto.request.HandoverVehiclePhotoRequest;
+import com.crs.bookingservice.service.VehicleInspectionAiService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -47,7 +51,9 @@ public class RentalGroupServiceImpl implements RentalGroupService {
     private final HandoverProtocolRepository handoverProtocolRepository;
     private final IamServiceClient iamServiceClient;
     private final CarManagementClient carManagementClient;
-
+    private final VehicleInspectionAiService vehicleInspectionAiService;
+    private final ObjectMapper objectMapper;
+    private final VehicleInspectionAnalysisRepository vehicleInspectionAnalysisRepository;
     private final AtomicLong bookingCounter = new AtomicLong(1);
 
     // ================================================================
@@ -293,6 +299,12 @@ public class RentalGroupServiceImpl implements RentalGroupService {
         unit.setStatus(RentalUnitStatus.ACTIVE);
         rentalUnitRepository.save(unit);
 
+        vehicleInspectionAiService.analyzeHandoverSafely(
+                bookingId,
+                unit.getId(),
+                "PICKUP",
+                request.getVehiclePhotos());
+
         // Nếu tất cả unit đã ACTIVE → booking IN_PROGRESS
         transitionToInProgressIfAllActive(group);
 
@@ -320,6 +332,12 @@ public class RentalGroupServiceImpl implements RentalGroupService {
         unit.setStatus(RentalUnitStatus.RETURNED);
         unit.setActualReturnTime(LocalDateTime.now());
         rentalUnitRepository.save(unit);
+
+        vehicleInspectionAiService.analyzeHandoverSafely(
+                bookingId,
+                unit.getId(),
+                "RETURN",
+                request.getVehiclePhotos());
 
         // Nếu tất cả unit đã RETURNED → booking COMPLETED
         transitionToCompletedIfAllReturned(group);
@@ -462,10 +480,20 @@ public class RentalGroupServiceImpl implements RentalGroupService {
                 .type(type)
                 .odoMeter(req.getOdoMeter())
                 .condition(req.getCondition())
-                .photos(req.getPhotos())
+                // .photos(req.getPhotos())
+                .photos(serializeVehiclePhotos(req.getVehiclePhotos()))
                 .build();
         handoverProtocolRepository.save(protocol);
         log.info("📝 Tạo HandoverProtocol type={} cho RentalUnit #{}.", type, unit.getId());
+    }
+
+    private String serializeVehiclePhotos(List<HandoverVehiclePhotoRequest> vehiclePhotos) {
+        try {
+            return objectMapper.writeValueAsString(vehiclePhotos);
+        } catch (JsonProcessingException ex) {
+            throw new InvalidRequestException(
+                    "Không thể xử lý danh sách ảnh bàn giao/trả xe: " + ex.getOriginalMessage());
+        }
     }
 
     private void transitionToInProgressIfAllActive(RentalGroup group) {
@@ -573,6 +601,23 @@ public class RentalGroupServiceImpl implements RentalGroupService {
                         e.getMessage());
             }
         }
+        // Enrich AI inspection info (Step 9)
+        try {
+            vehicleInspectionAnalysisRepository
+                    .findFirstByRentalUnitIdOrderByCreatedAtDesc(unit.getId())
+                    .ifPresent(analysis -> {
+                        response.setInspectionAnalysisId(analysis.getId());
+                        response.setInspectionStage(analysis.getStage());
+                        response.setInspectionStatus(analysis.getAnalysisStatus());
+                        response.setInspectionSeverity(analysis.getSeverity());
+                        response.setInspectionRecommendedFee(analysis.getRecommendedFee());
+                        response.setNeedsManualReview(analysis.isNeedsManualReview());
+                        response.setComparisonSummary(extractComparisonSummary(analysis));
+                        response.setNewDamageDetected(extractNewDamageDetected(analysis));
+                    });
+        } catch (Exception e) {
+            log.warn("[AI] Không thể enrich inspection cho RentalUnit #{}: {}", unit.getId(), e.getMessage());
+        }
 
         return response;
     }
@@ -586,5 +631,29 @@ public class RentalGroupServiceImpl implements RentalGroupService {
                 .currentLocation(driver.getCurrentLocation())
                 .averageRating(driver.getAverageRating())
                 .build();
+    }
+
+    private String extractComparisonSummary(VehicleInspectionAnalysis analysis) {
+        if (analysis.getComparisonResultJson() != null) {
+            try {
+                com.fasterxml.jackson.databind.JsonNode node =
+                        objectMapper.readTree(analysis.getComparisonResultJson());
+                String s = node.path("summary").asText(null);
+                if (s != null && !s.isBlank()) return s;
+            } catch (Exception ignored) {}
+        }
+        return analysis.getSummary();
+    }
+
+    private Boolean extractNewDamageDetected(VehicleInspectionAnalysis analysis) {
+        if (analysis.getComparisonResultJson() == null) return null;
+        try {
+            com.fasterxml.jackson.databind.JsonNode node =
+                    objectMapper.readTree(analysis.getComparisonResultJson());
+            if (node.has("newDamageDetected")) {
+                return node.path("newDamageDetected").asBoolean(false);
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 }

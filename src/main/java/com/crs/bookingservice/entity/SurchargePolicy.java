@@ -23,8 +23,12 @@ public class SurchargePolicy {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
 
+    /**
+     * NULL = chính sách toàn cục (global template, áp dụng cho mọi xe).
+     * NOT NULL = chính sách riêng của một RentalUnit cụ thể.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "rental_unit_id", nullable = false)
+    @JoinColumn(name = "rental_unit_id", nullable = true)
     RentalUnit rentalUnit;
 
     /**

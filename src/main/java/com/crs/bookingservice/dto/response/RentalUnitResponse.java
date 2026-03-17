@@ -3,6 +3,7 @@ package com.crs.bookingservice.dto.response;
 import com.crs.bookingservice.enums.RentalUnitStatus;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import com.crs.bookingservice.enums.InspectionSeverity;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -38,4 +39,13 @@ public class RentalUnitResponse {
     BigDecimal unitPrice;
     BigDecimal faultPercent;
     RentalUnitStatus status;
+    // ── AI Inspection (Step 9 - Staff App) ──────────────────────────
+    Long inspectionAnalysisId;       // ID của bản phân tích gần nhất
+    String inspectionStage;          // PICKUP | RETURN
+    String inspectionStatus;         // SUCCESS | TIMEOUT | RATE_LIMIT | ...
+    InspectionSeverity inspectionSeverity;
+    String comparisonSummary;        // summary so sánh PICKUP vs RETURN (RETURN stage)
+    BigDecimal inspectionRecommendedFee;
+    Boolean needsManualReview;
+    Boolean newDamageDetected;       // chỉ có giá trị ở RETURN stage
 }

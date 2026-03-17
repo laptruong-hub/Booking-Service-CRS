@@ -4,6 +4,15 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.AssertTrue;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import com.crs.bookingservice.enums.VehiclePhotoCorner;
+import jakarta.validation.Valid;
 
 /**
  * Ghi nhận biên bản bàn giao xe (nhận hoặc trả xe).
@@ -39,5 +48,22 @@ public class HandoverRequest {
     /**
      * Danh sách URL ảnh chụp (gửi dưới dạng JSON string array hoặc comma-separated)
      */
-    String photos;
+    @NotNull(message = "vehiclePhotos không được để trống")
+    @Size(min = 4, max = 4, message = "Phải cung cấp đúng 4 ảnh xe")
+    @Valid
+    List<HandoverVehiclePhotoRequest> vehiclePhotos;
+
+    @AssertTrue(message = "Phải có đủ 4 góc: FRONT_LEFT, FRONT_RIGHT, REAR_LEFT, REAR_RIGHT và không được trùng")
+    public boolean isVehiclePhotosValid() {
+        if (vehiclePhotos == null || vehiclePhotos.size() != 4) {
+            return false;
+        }
+
+        Set<VehiclePhotoCorner> corners = vehiclePhotos.stream()
+                .map(HandoverVehiclePhotoRequest::getCorner)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        return corners.equals(EnumSet.allOf(VehiclePhotoCorner.class));
+    }
 }
