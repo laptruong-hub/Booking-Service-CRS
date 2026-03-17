@@ -49,7 +49,7 @@ public class VehicleInspectionAnalysis {
     String provider; // GEMINI
 
     @Column(nullable = false, length = 100)
-    String model; // gemini-1.5-flash
+    String model; 
 
     @Column(name = "analysis_status", nullable = false, length = 50)
     String analysisStatus; // SUCCESS, RATE_LIMIT, TIMEOUT, ...

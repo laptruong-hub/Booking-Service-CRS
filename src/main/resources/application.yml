@@ -79,8 +79,7 @@ ai:
   gemini:
     enabled: true
     base-url: https://generativelanguage.googleapis.com
-    model: gemini-flash-latest
-    # api-key: ${GEMINI_API_KEY} 
-    api-key: AIzaSyDG6_3lJQoIT1pcIGWAp2PG7JkqnTrI0mg
+    model: gemini-3-flash-preview
+    api-key: ${GEMINI_API_KEY:} 
     connect-timeout-ms: 5000
     read-timeout-ms: 30000

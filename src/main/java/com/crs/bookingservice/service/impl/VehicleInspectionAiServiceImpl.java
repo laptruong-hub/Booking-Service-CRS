@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.crs.bookingservice.dto.ai.VehicleInspectionComparisonResult;
+import com.crs.bookingservice.dto.response.HandoverAiPreviewResponse;
 import java.util.HashSet;
 import java.util.Set;
 import com.crs.bookingservice.entity.IncurredFee;
@@ -179,6 +180,150 @@ public class VehicleInspectionAiServiceImpl implements VehicleInspectionAiServic
         }
     }
 
+    @Override
+    public HandoverAiPreviewResponse scanHandover(
+            Long bookingId,
+            Long rentalUnitId,
+            String stage,
+            List<HandoverVehiclePhotoRequest> vehiclePhotos
+    ) {
+        Long handoverProtocolId = handoverProtocolRepository
+                .findByRentalUnitIdAndType(rentalUnitId, stage)
+                .map(HandoverProtocol::getId)
+                .orElse(null);
+
+        if (!geminiEnabled) {
+            VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                bookingId, rentalUnitId, handoverProtocolId, stage, "DISABLED", "Gemini đang tắt");
+            return previewFallback(bookingId, rentalUnitId, failure.getId(), stage, "DISABLED", "Gemini đang tắt");
+        }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                bookingId, rentalUnitId, handoverProtocolId, stage, "MISSING_API_KEY", "Thiếu Gemini API key");
+            return previewFallback(
+                bookingId,
+                rentalUnitId,
+                failure.getId(),
+                stage,
+                "MISSING_API_KEY",
+                "Thiếu Gemini API key");
+        }
+
+        if (vehiclePhotos == null || vehiclePhotos.isEmpty()) {
+            VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                bookingId, rentalUnitId, handoverProtocolId, stage, "EMPTY_PHOTOS", "Thiếu ảnh để phân tích");
+            return previewFallback(
+                bookingId,
+                rentalUnitId,
+                failure.getId(),
+                stage,
+                "EMPTY_PHOTOS",
+                "Thiếu ảnh để phân tích");
+        }
+
+        try {
+            String prompt = buildPrompt(stage, vehiclePhotos);
+            GeminiGenerateContentRequest request = buildVisionRequest(prompt, vehiclePhotos);
+            GeminiGenerateContentResponse response = geminiClient.generateContent(model, apiKey, request);
+
+            String rawResponseJson = safeToJson(response);
+            VehicleInspectionNormalizedResult normalized = parseNormalizedOrFallback(extractText(response));
+
+            VehicleInspectionComparisonResult comparison = null;
+            Long baselineAnalysisId = null;
+            String comparisonResultJson = null;
+
+            if ("RETURN".equalsIgnoreCase(stage)) {
+                Optional<VehicleInspectionAnalysis> baselineOpt = vehicleInspectionAnalysisRepository
+                        .findFirstByRentalUnitIdAndStageAndAnalysisStatusOrderByCreatedAtDesc(
+                                rentalUnitId,
+                                "PICKUP",
+                                "SUCCESS"
+                        );
+                comparison = buildReturnComparison(normalized, baselineOpt.orElse(null));
+                baselineAnalysisId = comparison.getBaselineAnalysisId();
+                comparisonResultJson = safeToJson(comparison);
+                if (comparison != null && !Boolean.TRUE.equals(comparison.getBaselineFound())) {
+                    normalized.setNeedsManualReview(true);
+                }
+            }
+
+            String normalizedJson = safeToJson(normalized);
+            VehicleInspectionAnalysis savedAnalysis = saveAnalysisSuccess(
+                    bookingId,
+                    rentalUnitId,
+                    handoverProtocolId,
+                    stage,
+                    normalized,
+                    normalizedJson,
+                    rawResponseJson,
+                    baselineAnalysisId,
+                    comparisonResultJson);
+
+            if ("RETURN".equalsIgnoreCase(stage)) {
+                createAiFeeSuggestionForReturn(rentalUnitId, normalized, savedAnalysis);
+            }
+
+            return HandoverAiPreviewResponse.builder()
+                    .bookingId(bookingId)
+                    .rentalUnitId(rentalUnitId)
+                    .inspectionAnalysisId(savedAnalysis.getId())
+                    .stage(stage)
+                    .analysisStatus("SUCCESS")
+                    .inspectionAnalysis(normalized)
+                    .comparison(comparison)
+                    .errorMessage(null)
+                    .build();
+
+        } catch (FeignException.TooManyRequests ex) {
+                VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                    bookingId, rentalUnitId, handoverProtocolId, stage, "RATE_LIMIT", ex.getMessage());
+                return previewFallback(bookingId, rentalUnitId, failure.getId(), stage, "RATE_LIMIT", ex.getMessage());
+        } catch (RetryableException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof SocketTimeoutException) {
+                VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                    bookingId, rentalUnitId, handoverProtocolId, stage, "TIMEOUT", ex.getMessage());
+                return previewFallback(bookingId, rentalUnitId, failure.getId(), stage, "TIMEOUT", ex.getMessage());
+            }
+                VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                    bookingId,
+                    rentalUnitId,
+                    handoverProtocolId,
+                    stage,
+                    "RETRYABLE_ERROR",
+                    ex.getMessage());
+                return previewFallback(
+                    bookingId,
+                    rentalUnitId,
+                    failure.getId(),
+                    stage,
+                    "RETRYABLE_ERROR",
+                    ex.getMessage());
+        } catch (FeignException ex) {
+            String code = ex.status() == 429 ? "RATE_LIMIT" : "FEIGN_" + ex.status();
+                VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                    bookingId, rentalUnitId, handoverProtocolId, stage, code, ex.getMessage());
+                return previewFallback(bookingId, rentalUnitId, failure.getId(), stage, code, ex.getMessage());
+        } catch (Exception ex) {
+                VehicleInspectionAnalysis failure = saveAnalysisFailure(
+                    bookingId,
+                    rentalUnitId,
+                    handoverProtocolId,
+                    stage,
+                    "UNEXPECTED_ERROR",
+                    ex.getMessage());
+                return previewFallback(
+                    bookingId,
+                    rentalUnitId,
+                    failure.getId(),
+                    stage,
+                    "UNEXPECTED_ERROR",
+                    ex.getMessage());
+        }
+    }
+
     private String buildPrompt(String stage, List<HandoverVehiclePhotoRequest> vehiclePhotos) {
         String photosText = vehiclePhotos.stream()
                 .map(p -> p.getCorner() + ": " + p.getImageUrl())
@@ -227,8 +372,37 @@ public class VehicleInspectionAiServiceImpl implements VehicleInspectionAiServic
                 - Nếu không có hư hại: damageDetected=false, damages=[],
                 recommendedFee=0, severity=NONE.
                 
-                Lưu ý: Chỉ liệt kê các vết hư hại thật sự rõ ràng. Phần mô tả (description) trong mảng damages phải cực kỳ ngắn gọn, không vượt quá 15 từ. Chỉ trả về đúng cấu trúc JSON, không giải thích gì thêm."
+                Lưu ý: Chỉ liệt kê các vết hư hại thật sự rõ ràng. Phần mô tả trong mảng damages phải ngắn gọn.
                 """.formatted(stage, photosText);
+    }
+
+    private HandoverAiPreviewResponse previewFallback(
+            Long bookingId,
+            Long rentalUnitId,
+            Long inspectionAnalysisId,
+            String stage,
+            String analysisStatus,
+            String errorMessage
+    ) {
+        VehicleInspectionNormalizedResult fallback = new VehicleInspectionNormalizedResult();
+        fallback.setDamageDetected(false);
+        fallback.setDamages(List.of());
+        fallback.setSeverity(InspectionSeverity.MEDIUM);
+        fallback.setConfidence(BigDecimal.ZERO);
+        fallback.setNeedsManualReview(true);
+        fallback.setRecommendedFee(BigDecimal.ZERO);
+        fallback.setSummary("AI preview thất bại, cần staff review thủ công");
+
+        return HandoverAiPreviewResponse.builder()
+                .bookingId(bookingId)
+                .rentalUnitId(rentalUnitId)
+            .inspectionAnalysisId(inspectionAnalysisId)
+                .stage(stage)
+                .analysisStatus(analysisStatus)
+                .inspectionAnalysis(fallback)
+                .comparison(null)
+                .errorMessage(errorMessage)
+                .build();
     }
 
     private String extractText(GeminiGenerateContentResponse response) {
@@ -347,7 +521,7 @@ public class VehicleInspectionAiServiceImpl implements VehicleInspectionAiServic
         return vehicleInspectionAnalysisRepository.save(analysis);
     }
 
-    private void saveAnalysisFailure(
+    private VehicleInspectionAnalysis saveAnalysisFailure(
             Long bookingId,
             Long rentalUnitId,
             Long handoverProtocolId,
@@ -376,7 +550,7 @@ public class VehicleInspectionAiServiceImpl implements VehicleInspectionAiServic
                 .rawResponseJson("{}")
                 .errorMessage(errorMessage)
                 .build();
-        vehicleInspectionAnalysisRepository.save(analysis);
+            return vehicleInspectionAnalysisRepository.save(analysis);
     }
     private VehicleInspectionComparisonResult buildReturnComparison(
             VehicleInspectionNormalizedResult returnResult,
@@ -480,6 +654,13 @@ public class VehicleInspectionAiServiceImpl implements VehicleInspectionAiServic
         if (savedAnalysis == null || savedAnalysis.getId() == null) {
             return;
         }
+
+        if (incurredFeeRepository.existsByRentalUnitIdAndApprovalStatusAndAiSuggestedTrue(
+                rentalUnitId,
+                FeeApprovalStatus.PENDING)) {
+            return;
+        }
+
         if (incurredFeeRepository.existsByAiAnalysisId(savedAnalysis.getId())) {
             return;
         }

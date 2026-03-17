@@ -21,4 +21,12 @@ public interface VehicleInspectionAnalysisRepository extends JpaRepository<Vehic
             String analysisStatus
     );
     Optional<VehicleInspectionAnalysis> findFirstByRentalUnitIdOrderByCreatedAtDesc(Long rentalUnitId);
+
+        Optional<VehicleInspectionAnalysis> findFirstByHandoverProtocolIdOrderByCreatedAtDesc(Long handoverProtocolId);
+
+        Optional<VehicleInspectionAnalysis> findFirstByBookingIdAndRentalUnitIdAndStageOrderByCreatedAtDesc(
+                        Long bookingId,
+                        Long rentalUnitId,
+                        String stage
+        );
 }

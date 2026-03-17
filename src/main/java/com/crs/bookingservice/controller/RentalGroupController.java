@@ -3,8 +3,10 @@ package com.crs.bookingservice.controller;
 import com.crs.bookingservice.dto.request.AssignDriverRequest;
 import com.crs.bookingservice.dto.request.CreateRentalGroupRequest;
 import com.crs.bookingservice.dto.request.HandoverRequest;
+import com.crs.bookingservice.dto.request.StaffHandoverScanRequest;
 import com.crs.bookingservice.dto.response.ApiResponse;
 import com.crs.bookingservice.dto.response.DriverProfileResponse;
+import com.crs.bookingservice.dto.response.HandoverAiPreviewResponse;
 import com.crs.bookingservice.dto.response.PageResponse;
 import com.crs.bookingservice.dto.response.RentalGroupResponse;
 import com.crs.bookingservice.enums.BookingStatus;
@@ -138,6 +140,41 @@ public class RentalGroupController {
                                 "Đã bàn giao xe, chuyến đi bắt đầu."));
         }
 
+        @PostMapping("/{id}/staff-handover-start-preview")
+        @Operation(
+                        summary = "[STAFF] Scan AI trước bàn giao PICKUP",
+                        description = "Phân tích AI và lưu analysis record, chưa thay đổi trạng thái booking/rental unit",
+                        requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @io.swagger.v3.oas.annotations.media.Content(examples = @io.swagger.v3.oas.annotations.media.ExampleObject(name = "PICKUP_4_CORNERS", value = """
+                                        {
+                                          \"rentalUnitId\": 101,
+                                          \"vehiclePhotos\": [
+                                            {
+                                              \"corner\": \"FRONT_LEFT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-fl-pickup.jpg\"
+                                            },
+                                            {
+                                              \"corner\": \"FRONT_RIGHT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-fr-pickup.jpg\"
+                                            },
+                                            {
+                                              \"corner\": \"REAR_LEFT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-rl-pickup.jpg\"
+                                            },
+                                            {
+                                              \"corner\": \"REAR_RIGHT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-rr-pickup.jpg\"
+                                            }
+                                          ]
+                                        }
+                                        """))))
+        public ResponseEntity<ApiResponse<HandoverAiPreviewResponse>> previewStaffHandoverStart(
+                        @PathVariable Long id,
+                        @Valid @RequestBody com.crs.bookingservice.dto.request.StaffHandoverScanRequest request) {
+                return ResponseEntity.ok(ApiResponse.success(
+                                rentalGroupService.previewStaffHandoverStart(id, request),
+                                "Scan AI thành công."));
+        }
+
         @PatchMapping("/{id}/staff-handover-return")
         @Operation(summary = "[STAFF] Nhận xe lại từ khách → COMPLETED", description = """
                         Dùng cho booking **không có tài xế**.
@@ -151,6 +188,41 @@ public class RentalGroupController {
                 return ResponseEntity.ok(ApiResponse.success(
                                 rentalGroupService.staffHandoverReturn(id, request),
                                 "Đã nhận xe lại, booking hoàn tất."));
+        }
+
+        @PostMapping("/{id}/staff-handover-return-preview")
+        @Operation(
+                        summary = "[STAFF] Scan AI trước nhận xe RETURN",
+                        description = "Phân tích AI + so sánh baseline và lưu analysis record, chưa thay đổi trạng thái booking/rental unit",
+                        requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @io.swagger.v3.oas.annotations.media.Content(examples = @io.swagger.v3.oas.annotations.media.ExampleObject(name = "RETURN_4_CORNERS", value = """
+                                        {
+                                          \"rentalUnitId\": 101,
+                                          \"vehiclePhotos\": [
+                                            {
+                                              \"corner\": \"FRONT_LEFT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-fl-return.jpg\"
+                                            },
+                                            {
+                                              \"corner\": \"FRONT_RIGHT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-fr-return.jpg\"
+                                            },
+                                            {
+                                              \"corner\": \"REAR_LEFT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-rl-return.jpg\"
+                                            },
+                                            {
+                                              \"corner\": \"REAR_RIGHT\",
+                                              \"imageUrl\": \"https://cdn.example.com/rental-101-rr-return.jpg\"
+                                            }
+                                          ]
+                                        }
+                                        """))))
+        public ResponseEntity<ApiResponse<HandoverAiPreviewResponse>> previewStaffHandoverReturn(
+                        @PathVariable Long id,
+                        @Valid @RequestBody com.crs.bookingservice.dto.request.StaffHandoverScanRequest request) {
+                return ResponseEntity.ok(ApiResponse.success(
+                                rentalGroupService.previewStaffHandoverReturn(id, request),
+                                "Scan AI thành công."));
         }
 
         // ================================================================
