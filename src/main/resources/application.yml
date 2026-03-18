@@ -5,8 +5,8 @@ spring:
   # Database Configuration
   datasource:
     url: jdbc:postgresql://localhost:5432/booking_service_db
-    username: postgres
-    password: 16042005
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:1}
     driver-class-name: org.postgresql.Driver
 
   # JPA/Hibernate Configuration

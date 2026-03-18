@@ -48,6 +48,12 @@ public class Invoice {
     @JoinColumn(name = "payment_method_id")
     PaymentMethod paymentMethod;
 
+    /**
+     * Thời gian thanh toán (nếu đã thanh toán)
+     */
+    @Column(name = "paid_at")
+    LocalDateTime paidAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     LocalDateTime createdAt;
