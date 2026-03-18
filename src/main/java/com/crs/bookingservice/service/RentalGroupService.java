@@ -3,7 +3,9 @@ package com.crs.bookingservice.service;
 import com.crs.bookingservice.dto.request.AssignDriverRequest;
 import com.crs.bookingservice.dto.request.CreateRentalGroupRequest;
 import com.crs.bookingservice.dto.request.HandoverRequest;
+import com.crs.bookingservice.dto.request.StaffHandoverScanRequest;
 import com.crs.bookingservice.dto.response.DriverProfileResponse;
+import com.crs.bookingservice.dto.response.HandoverAiPreviewResponse;
 import com.crs.bookingservice.dto.response.PageResponse;
 import com.crs.bookingservice.dto.response.RentalGroupResponse;
 import com.crs.bookingservice.enums.BookingStatus;
@@ -59,10 +61,22 @@ public interface RentalGroupService {
     RentalGroupResponse staffHandoverStart(Long bookingId, HandoverRequest request);
 
     /**
+     * [STAFF] Scan AI cho bàn giao PICKUP trước khi confirm.
+     * Không đổi trạng thái booking/rental unit, nhưng có lưu analysis record.
+     */
+    HandoverAiPreviewResponse previewStaffHandoverStart(Long bookingId, StaffHandoverScanRequest request);
+
+    /**
      * [STAFF] Nhận xe lại từ khách sau chuyến đi.
      * Tạo HandoverProtocol type=RETURN và chuyển sang COMPLETED.
      */
     RentalGroupResponse staffHandoverReturn(Long bookingId, HandoverRequest request);
+
+    /**
+     * [STAFF] Scan AI cho nhận xe RETURN trước khi confirm.
+     * Không đổi trạng thái booking/rental unit, nhưng có lưu analysis record.
+     */
+    HandoverAiPreviewResponse previewStaffHandoverReturn(Long bookingId, StaffHandoverScanRequest request);
 
     // ============================================================
     // DRIVER OPERATIONS

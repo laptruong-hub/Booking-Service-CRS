@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 import org.hibernate.annotations.CreationTimestamp;
+import com.crs.bookingservice.enums.FeeApprovalStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -49,6 +50,18 @@ public class IncurredFee {
      */
     @Column(length = 500)
     String description;
+
+    @Column(name = "is_ai_suggested", nullable = false)
+    @Builder.Default
+    boolean aiSuggested = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false, length = 20)
+    @Builder.Default
+    FeeApprovalStatus approvalStatus = FeeApprovalStatus.PENDING;
+
+    @Column(name = "ai_analysis_id")
+    Long aiAnalysisId;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

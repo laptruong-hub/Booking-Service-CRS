@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
+import java.math.BigDecimal;
 
 /**
  * Ghi nhận biên bản bàn giao xe (nhận hoặc trả xe).
@@ -37,7 +38,13 @@ public class HandoverRequest {
     String condition;
 
     /**
-     * Danh sách URL ảnh chụp (gửi dưới dạng JSON string array hoặc comma-separated)
+     * Optional: bản scan AI mà FE chọn để bind vào lần confirm này.
      */
-    String photos;
+    Long inspectionAnalysisId;
+
+    /**
+     * Optional: phí phát sinh staff chốt cuối cùng tại bước RETURN.
+     */
+    BigDecimal finalIncurredFee;
+
 }

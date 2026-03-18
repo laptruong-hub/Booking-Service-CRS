@@ -70,3 +70,16 @@ feign:
         connect-timeout: 5000
         read-timeout: 10000
         logger-level: BASIC
+      # Thêm cấu hình timeout riêng cho Gemini Client ngay dưới default
+      gemini-client: 
+        connect-timeout: 5000
+        read-timeout: 30000
+
+ai:
+  gemini:
+    enabled: true
+    base-url: https://generativelanguage.googleapis.com
+    model: gemini-3-flash-preview
+    api-key: ${GEMINI_API_KEY:} 
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
