@@ -7,6 +7,7 @@ import lombok.experimental.FieldDefaults;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -36,4 +37,7 @@ public class RentalGroupResponse {
     BookingStatus status;
     LocalDateTime createdAt;
     List<RentalUnitResponse> rentalUnits;
+
+    @Builder.Default
+    List<InvoiceResponse> invoices = new ArrayList<>();
 }

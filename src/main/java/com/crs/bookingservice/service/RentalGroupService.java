@@ -100,4 +100,10 @@ public interface RentalGroupService {
 
     /** Lấy danh sách tài xế đang trống lịch (ACTIVE, không có booking đang chạy) */
     List<DriverProfileResponse> getAvailableDrivers();
+
+    /**
+     * Lấy danh sách tất cả booking mà tài xế đã/đang được phân công.
+     * Filter theo status nếu có.
+     */
+    PageResponse<RentalGroupResponse> getBookingsByDriver(Long driverId, BookingStatus status, int page, int size);
 }

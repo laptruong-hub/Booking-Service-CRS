@@ -22,6 +22,9 @@ import com.crs.bookingservice.enums.InvoiceType;
 import com.crs.bookingservice.enums.RentalUnitStatus;
 import com.crs.bookingservice.exception.InvalidRequestException;
 import com.crs.bookingservice.exception.ResourceNotFoundException;
+import com.crs.bookingservice.dto.response.InvoiceResponse;
+import com.crs.bookingservice.entity.Invoice;
+import com.crs.bookingservice.enums.InvoiceType;
 import com.crs.bookingservice.repository.*;
 import com.crs.bookingservice.service.RentalGroupService;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +38,7 @@ import com.crs.bookingservice.dto.request.HandoverVehiclePhotoRequest;
 import com.crs.bookingservice.service.VehicleInspectionAiService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -57,6 +61,7 @@ public class RentalGroupServiceImpl implements RentalGroupService {
     private final RentalUnitRepository rentalUnitRepository;
     private final DriverProfileRepository driverProfileRepository;
     private final HandoverProtocolRepository handoverProtocolRepository;
+    private final InvoiceRepository invoiceRepository;
     private final IamServiceClient iamServiceClient;
     private final CarManagementClient carManagementClient;
     private final VehicleInspectionAiService vehicleInspectionAiService;
@@ -65,6 +70,14 @@ public class RentalGroupServiceImpl implements RentalGroupService {
     private final IncurredFeeRepository incurredFeeRepository;
     private final InvoiceRepository invoiceRepository;
     private final AtomicLong bookingCounter = new AtomicLong(1);
+
+    @PostConstruct
+    private void initBookingCounter() {
+        String prefix = "BK-" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        long maxSeq = rentalGroupRepository.getMaxSequenceForDate(prefix);
+        bookingCounter.set(maxSeq + 1);
+        log.info("Khởi tạo booking counter: ngày {} → bắt đầu từ số {}", prefix, maxSeq + 1);
+    }
 
     // ================================================================
     // CUSTOMER OPERATIONS
@@ -152,6 +165,17 @@ public class RentalGroupServiceImpl implements RentalGroupService {
                     .build();
 
             rentalUnitRepository.save(unit);
+        }
+
+        // Auto-tạo RENTAL invoice ngay khi đặt xe để khách có thể thanh toán ngay
+        if (totalAmount.compareTo(java.math.BigDecimal.ZERO) > 0) {
+            Invoice rentalInvoice = Invoice.builder()
+                    .rentalGroup(savedGroup)
+                    .amount(totalAmount)
+                    .type(InvoiceType.RENTAL)
+                    .build();
+            invoiceRepository.save(rentalInvoice);
+            log.info("🧾 Đã tạo hóa đơn RENTAL {} VNĐ cho booking {}.", totalAmount, bookingCode);
         }
 
         log.info("✅ Đã tạo booking {} thành công → PENDING, chờ Staff xác nhận.", bookingCode);
@@ -489,6 +513,20 @@ public class RentalGroupServiceImpl implements RentalGroupService {
     }
 
     // ================================================================
+    // DRIVER BOOKING QUERIES
+    // ================================================================
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<RentalGroupResponse> getBookingsByDriver(Long driverId, BookingStatus status, int page, int size) {
+        driverProfileRepository.findById(driverId)
+                .orElseThrow(() -> new ResourceNotFoundException("DriverProfile", driverId));
+        Page<RentalGroup> p = rentalGroupRepository.findByDriverId(
+                driverId, status, PageRequest.of(page, size, Sort.by("createdAt").descending()));
+        return PageResponse.of(p.map(this::toResponse));
+    }
+
+    // ================================================================
     // PRIVATE HELPERS
     // ================================================================
 
@@ -689,12 +727,31 @@ public class RentalGroupServiceImpl implements RentalGroupService {
 
     private String generateBookingCode() {
         String date = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        return String.format("BK-%s-%03d", date, bookingCounter.getAndIncrement());
+        String code;
+        do {
+            code = String.format("BK-%s-%03d", date, bookingCounter.getAndIncrement());
+        } while (rentalGroupRepository.existsByBookingCode(code));
+        return code;
+    }
+
+    private InvoiceResponse toInvoiceResponse(Invoice invoice) {
+        return InvoiceResponse.builder()
+                .id(invoice.getId())
+                .type(invoice.getType())
+                .amount(invoice.getAmount())
+                .paidAt(invoice.getPaidAt())
+                .paymentMethodType(invoice.getPaymentMethod() != null
+                        ? invoice.getPaymentMethod().getMethodType().name() : null)
+                .status(invoice.getPaidAt() != null ? "PAID" : "UNPAID")
+                .build();
     }
 
     private RentalGroupResponse toResponse(RentalGroup group) {
         List<RentalUnitResponse> units = group.getRentalUnits().stream()
                 .map(this::toUnitResponse).toList();
+
+        List<InvoiceResponse> invoices = invoiceRepository.findByRentalGroupId(group.getId())
+                .stream().map(this::toInvoiceResponse).toList();
 
         RentalGroupResponse response = RentalGroupResponse.builder()
                 .id(group.getId())
@@ -708,6 +765,7 @@ public class RentalGroupServiceImpl implements RentalGroupService {
                 .status(group.getStatus())
                 .createdAt(group.getCreatedAt())
                 .rentalUnits(units)
+                .invoices(invoices)
                 .build();
 
         // Enrich customer info từ iam-service

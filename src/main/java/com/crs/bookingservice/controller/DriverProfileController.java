@@ -4,12 +4,16 @@ import com.crs.bookingservice.client.IamServiceClient;
 import com.crs.bookingservice.client.dto.IamUserDto;
 import com.crs.bookingservice.dto.response.ApiResponse;
 import com.crs.bookingservice.dto.response.DriverProfileResponse;
+import com.crs.bookingservice.dto.response.PageResponse;
+import com.crs.bookingservice.dto.response.RentalGroupResponse;
 import com.crs.bookingservice.entity.DriverProfile;
+import com.crs.bookingservice.enums.BookingStatus;
 import com.crs.bookingservice.enums.DriverStatus;
 import com.crs.bookingservice.exception.DuplicateResourceException;
 import com.crs.bookingservice.exception.InvalidRequestException;
 import com.crs.bookingservice.exception.ResourceNotFoundException;
 import com.crs.bookingservice.repository.DriverProfileRepository;
+import com.crs.bookingservice.service.RentalGroupService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
@@ -43,6 +47,7 @@ public class DriverProfileController {
 
         private final DriverProfileRepository driverProfileRepository;
         private final IamServiceClient iamServiceClient;
+        private final RentalGroupService rentalGroupService;
 
         // ================================================================
         // GET — Lấy danh sách tài xế từ IAM → enrich với local profile
@@ -168,6 +173,41 @@ public class DriverProfileController {
         }
 
         // ================================================================
+        // PUT — Cập nhật hồ sơ tài xế
+        // ================================================================
+
+        @PutMapping("/{id}")
+        @Operation(summary = "Cập nhật hồ sơ nghề nghiệp cho tài xế", description = "Cập nhật thông tin bằng lái và vị trí của tài xế.")
+        public ResponseEntity<ApiResponse<DriverProfileResponse>> updateDriver(
+                        @PathVariable Long id,
+                        @RequestParam @NotBlank String licenseNumber,
+                        @RequestParam(required = false) String currentLocation) {
+
+                DriverProfile driver = driverProfileRepository.findById(id)
+                                .orElseThrow(() -> new ResourceNotFoundException("DriverProfile", id));
+
+                // Validate: nếu đổi bằng lái mới thì check trùng
+                if (!driver.getLicenseNumber().equals(licenseNumber)
+                                && driverProfileRepository.existsByLicenseNumber(licenseNumber)) {
+                        throw new DuplicateResourceException(
+                                        "Số bằng lái " + licenseNumber + " đã được đăng ký cho tài xế khác.");
+                }
+
+                driver.setLicenseNumber(licenseNumber);
+                driver.setCurrentLocation(currentLocation);
+                driver = driverProfileRepository.save(driver);
+
+                IamUserDto iamUser = null;
+                try {
+                        iamUser = iamServiceClient.getUserById(driver.getUserId());
+                } catch (Exception ignored) {
+                }
+
+                return ResponseEntity.ok(ApiResponse.success(buildResponse(iamUser, driver),
+                                "Đã cập nhật hồ sơ tài xế thành công."));
+        }
+
+        // ================================================================
         // PATCH — Cập nhật trạng thái
         // ================================================================
 
@@ -189,6 +229,27 @@ public class DriverProfileController {
 
                 return ResponseEntity.ok(ApiResponse.success(
                                 buildResponse(iamUser, driver), "Đã cập nhật trạng thái tài xế."));
+        }
+
+        // ================================================================
+        // GET — Lấy danh sách booking của tài xế
+        // ================================================================
+
+        @GetMapping("/{id}/bookings")
+        @Operation(summary = "Lấy danh sách booking của tài xế theo profile ID", description = """
+                        Trả về tất cả booking mà tài xế đã hoặc đang được phân công.
+                        Có thể filter theo trạng thái booking (`status`).
+
+                        **Các trạng thái booking:** `PENDING`, `CONFIRMED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`
+                        """)
+        public ResponseEntity<ApiResponse<PageResponse<RentalGroupResponse>>> getDriverBookings(
+                        @PathVariable Long id,
+                        @RequestParam(required = false) BookingStatus status,
+                        @RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "10") int size) {
+                return ResponseEntity.ok(ApiResponse.success(
+                                rentalGroupService.getBookingsByDriver(id, status, page, size),
+                                "OK"));
         }
 
         // ================================================================
